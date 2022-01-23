@@ -1,3 +1,12 @@
+// If you are not compiling with the gcc option --std=gnu99, then
+// uncomment the following line or you might get a compiler warning
+//#define _GNU_SOURCE
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+
 /* struct for movie information */
 struct movie
 {
@@ -7,8 +16,6 @@ struct movie
     char *rating;
     struct movie *next;
 };
-
-
 
 /* Parse the current line which is space delimited and create a
 *  movie struct with the data in this line
@@ -32,7 +39,7 @@ struct movie *createMovie(char *currLine)
 
     // The next token is the languages
     token = strtok_r(NULL, ",", &saveptr);
-    currMovie->languages = processLanguages(token);
+    currMovie->languages = calloc(strlen(token) + 1, sizeof(char));
     strcpy(currMovie->languages, token);
 
     // The last token is the rating
@@ -116,14 +123,39 @@ void printByYear(char *year, struct movie *list)
     printf("\n");
 }
 
-int main(int argc, char *argv[])
+int promptUser()
 {
-    if (argc < 2)
-    {
-        printf("You must provide the name of the file to process\n");
-        printf("Example usage: ./movies movie_sample_1.csv\n");
-        return EXIT_FAILURE;
+    int input;
+    char* input1 = malloc(sizeof(char) * 20);
+
+    while( input != 2 ){
+
+        printf("1. Select file to process\n");
+        printf("2. Exit the program\n\n");
+
+        printf("Enter a choice 1 or 2: ");
+        scanf("%d", &input);
+        
+        switch(input){
+            case 1:
+                printf("Which file do you want to process?");
+                printf("Enter 1 to pick the largest file\n");
+                printf("Enter 2 to pick the smallest file\n");
+                printf("Enter 3 to specify the name of a file\n"); 
+                break;
+            case 2:
+                break;
+            default:
+                printf("Not a valid option, please select 1 or 2 only.\n");
+                break;
+        }
+        printf("\n");
     }
-    struct movie *list = processFile(argv[1]);
-    promptUser(list);
+    return 0;
+
+}
+
+int main(int argc)
+{
+    promptUser();
 }
