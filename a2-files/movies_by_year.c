@@ -5,6 +5,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <dirent.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <time.h>
+#include <unistd.h>
 
 
 /* struct for movie information */
@@ -123,14 +128,55 @@ void printByYear(char *year, struct movie *list)
     printf("\n");
 }
 
+void processLarge()
+{
+    printf("you have processed large");
+}
+
+void processSmall()
+{
+    printf("you have processed small");
+}
+
+void processName()
+{
+    printf("you have processed name");
+}
+
+int promptUserSecond()
+{
+    int input;
+    char* fileName = malloc(sizeof(char) * 20);
+
+    printf("\nWhich file do you want to process?\n");
+    printf("Enter 1 to pick the largest file\n");
+    printf("Enter 2 to pick the smallest file\n");
+    printf("Enter 3 to specify the name of a file\n");
+    scanf("%d", &input);
+    
+    switch(input){
+        case 1:
+            processLarge();
+            break;
+        case 2:
+            processSmall();
+            break;
+        case 3:
+            processName();
+            break;
+        default:
+            printf("Not a valid option, please select 1, 2 or 3 only.\n");
+            break;
+    }
+}
+
 int promptUser()
 {
     int input;
-    char* input1 = malloc(sizeof(char) * 20);
 
     while( input != 2 ){
 
-        printf("1. Select file to process\n");
+        printf("\n1. Select file to process\n");
         printf("2. Exit the program\n\n");
 
         printf("Enter a choice 1 or 2: ");
@@ -138,10 +184,7 @@ int promptUser()
         
         switch(input){
             case 1:
-                printf("Which file do you want to process?");
-                printf("Enter 1 to pick the largest file\n");
-                printf("Enter 2 to pick the smallest file\n");
-                printf("Enter 3 to specify the name of a file\n"); 
+                promptUserSecond();
                 break;
             case 2:
                 break;
