@@ -11,6 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#define PREFIX "movies_"
 
 /* struct for movie information */
 struct movie
@@ -130,7 +131,44 @@ void printByYear(char *year, struct movie *list)
 
 void processLarge()
 {
-    printf("you have processed large");
+    // Large parts of this code was taken from Module 3, Exploration: Directories
+    DIR* currDir = opendir(".");
+    struct dirent *aDir;
+    size_t fileSize;
+    struct stat dirStat;
+    char* fileName = malloc(sizeof(char) * 256);
+    int i = 0;
+    // const PREFIX = "movies_"
+
+    // Go through all the entries in current directory
+    while((aDir = readdir(currDir)) != NULL){
+
+        //check prefix
+        if(strncmp(PREFIX, aDir->d_name, strlen(PREFIX)) == 0){
+
+            //check file type
+            int len = strlen(aDir->d_name);
+            char *last_four = &aDir->d_name[len-4];
+            if(strncmp(last_four, ".csv", 4) == 0){
+
+                // Get meta-data for the current entry
+                stat(aDir->d_name, &dirStat); 
+
+                // compare files sizes to get largest
+                if(i == 0 || (dirStat.st_size > fileSize) ){
+
+                    fileSize = dirStat.st_size;
+                    memset(fileName, '\0', sizeof(fileName));
+                    strcpy(fileName, aDir->d_name);
+                }
+
+                i++;
+
+            }
+        }
+
+    }
+    printf("\nNow processing the largest file named %s\n", fileName);
 }
 
 void processSmall()
@@ -140,20 +178,20 @@ void processSmall()
 
 void processName()
 {
+    char* fileName = malloc(sizeof(char) * 20);
     printf("you have processed name");
 }
 
 int promptUserSecond()
 {
     int input;
-    char* fileName = malloc(sizeof(char) * 20);
 
     printf("\nWhich file do you want to process?\n");
     printf("Enter 1 to pick the largest file\n");
     printf("Enter 2 to pick the smallest file\n");
     printf("Enter 3 to specify the name of a file\n");
     scanf("%d", &input);
-    
+
     switch(input){
         case 1:
             processLarge();
