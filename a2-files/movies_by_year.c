@@ -173,7 +173,44 @@ void processLarge()
 
 void processSmall()
 {
-    printf("you have processed small");
+    // Large parts of this code was taken from Module 3, Exploration: Directories
+    DIR* currDir = opendir(".");
+    struct dirent *aDir;
+    size_t fileSize;
+    struct stat dirStat;
+    char* fileName = malloc(sizeof(char) * 256);
+    int i = 0;
+    // const PREFIX = "movies_"
+
+    // Go through all the entries in current directory
+    while((aDir = readdir(currDir)) != NULL){
+
+        //check prefix
+        if(strncmp(PREFIX, aDir->d_name, strlen(PREFIX)) == 0){
+
+            //check file type
+            int len = strlen(aDir->d_name);
+            char *last_four = &aDir->d_name[len-4];
+            if(strncmp(last_four, ".csv", 4) == 0){
+
+                // Get meta-data for the current entry
+                stat(aDir->d_name, &dirStat); 
+
+                // compare files sizes to get largest
+                if(i == 0 || (dirStat.st_size < fileSize) ){
+
+                    fileSize = dirStat.st_size;
+                    memset(fileName, '\0', sizeof(fileName));
+                    strcpy(fileName, aDir->d_name);
+                }
+
+                i++;
+
+            }
+        }
+
+    }
+    printf("\nNow processing the smallest file named %s\n", fileName);
 }
 
 void processName()
