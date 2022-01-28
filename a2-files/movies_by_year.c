@@ -120,27 +120,29 @@ void processYear(char* filePath, char *year, struct movie *list)
 {
     int count = 0;
     char dest[] = "./";
+    char source[25] = filePath;
+    strcat(dest, source);
+    printf("here is the filepath root: %s", dest);
 
+    // while (list != NULL)
+    // {
+    //     struct movie *temp = NULL;
 
-    while (list != NULL)
-    {
-        struct movie *temp = NULL;
-
-        if (strcmp(list->year, year) == 0)
-        {
-            temp = list->next;
-            list->next = temp->next;
-            free(temp);
-            count++;
-        }
+    //     if (strcmp(list->year, year) == 0)
+    //     {
+    //         temp = list->next;
+    //         list->next = temp->next;
+    //         free(temp);
+    //         count++;
+    //     }
         
-        list = list->next;
-    }
-    if (count == 0)
-    {
-        printf("No data about movies released in the year %s\n", year);
-    }
-    printf("\n");
+    //     list = list->next;
+    // }
+    // if (count == 0)
+    // {
+    //     printf("No data about movies released in the year %s\n", year);
+    // }
+    // printf("\n");
 }
 
 void createDirectory(char *fileName)
