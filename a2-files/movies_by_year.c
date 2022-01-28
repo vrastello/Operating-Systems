@@ -5,11 +5,15 @@
 /*
 SOURCES:
 OSU, CS 344, Module 3, Exploration: Directories
+OSU, CS 344, Module 3, Exploration: Files
+OSU, CS 344, Module e, Exploration: Strings
 student.c from module 1, provided by instructor
-
+https://stackoverflow.com/questions/5889880/better-way-to-concatenate-multiple-strings-in-c/5889984
+https://stackoverflow.com/questions/5428632/c-error-undefined-reference-to-itoa
 */
 
 #include <stdio.h>
+#include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
@@ -116,33 +120,36 @@ struct movie *processFile(char *filePath)
     return head;
 }
 
-void processYear(char* filePath, char *year, struct movie *list)
+void processYear(char* filePath, int year, struct movie *list)
 {
-    int count = 0;
-    char dest[] = "./";
-    char source[25] = filePath;
-    strcat(dest, source);
-    printf("here is the filepath root: %s", dest);
+    // used Module 3, Exploration: files for this code
+    char rootPath[256] = "";
+    int fd;
+    char yearString[5];
+    int first = 1;
 
-    // while (list != NULL)
-    // {
-    //     struct movie *temp = NULL;
+    snprintf(yearString, 5, "%d", year);
+    
+    while (list != NULL)
+    {
+        if (strncmp(list->year, yearString, strlen(yearString)) == 0)
+        {
+            snprintf(rootPath, sizeof(rootPath), "./%s/%s.txt", filePath, yearString);
+            fd = open(rootPath, O_RDWR | O_CREAT | O_APPEND, 0640);
+            
+            if (fd == -1){
+                printf("open() failed on \"%s\"\n", rootPath);
+                perror("Error");
+                exit(1);
+	        }
 
-    //     if (strcmp(list->year, year) == 0)
-    //     {
-    //         temp = list->next;
-    //         list->next = temp->next;
-    //         free(temp);
-    //         count++;
-    //     }
+            char message[256] = "";
+            snprintf(message, sizeof(message), "%s\n", list->title);
+            write(fd, message, strlen(message));
+        }
         
-    //     list = list->next;
-    // }
-    // if (count == 0)
-    // {
-    //     printf("No data about movies released in the year %s\n", year);
-    // }
-    // printf("\n");
+        list = list->next;
+    }
 }
 
 void createDirectory(char *fileName)
@@ -158,10 +165,9 @@ void createDirectory(char *fileName)
 
     printf("\nCreated directory with name %s", dest);
 
-    while (list != NULL)
-    {
-        processYear(dest, list->year, list);
-        list = list->next;
+    for(int i = 1900; i <= 2022; i++){
+
+        processYear(dest, i, list);
     }
 }
 
