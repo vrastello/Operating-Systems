@@ -2,6 +2,13 @@
 // uncomment the following line or you might get a compiler warning
 //#define _GNU_SOURCE
 
+/*
+SOURCES:
+OSU, CS 344, Module 3, Exploration: Directories
+student.c from module 1, provided by instructor
+
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,6 +19,7 @@
 #include <unistd.h>
 
 #define PREFIX "movies_"
+#define ONID "rastellv.movies."
 
 /* struct for movie information */
 struct movie
@@ -108,15 +116,21 @@ struct movie *processFile(char *filePath)
     return head;
 }
 
-void printByYear(char *year, struct movie *list)
+void processYear(char* filePath, char *year, struct movie *list)
 {
     int count = 0;
+    char dest[] = "./";
+
 
     while (list != NULL)
     {
+        struct movie *temp = NULL;
+
         if (strcmp(list->year, year) == 0)
         {
-            printf("%s\n", list->title);
+            temp = list->next;
+            list->next = temp->next;
+            free(temp);
             count++;
         }
         
@@ -127,6 +141,26 @@ void printByYear(char *year, struct movie *list)
         printf("No data about movies released in the year %s\n", year);
     }
     printf("\n");
+}
+
+void createDirectory(char *fileName)
+{
+    int r = rand() % 100000;
+    char dest[] = ONID;
+    char source[7];
+    struct movie *list = processFile(fileName);
+
+    snprintf(source, 7, "%d", r);
+    strcat(dest, source);
+    mkdir(dest, 0750);
+
+    printf("\nCreated directory with name %s", dest);
+
+    while (list != NULL)
+    {
+        processYear(dest, list->year, list);
+        list = list->next;
+    }
 }
 
 void processLarge()
@@ -169,6 +203,7 @@ void processLarge()
 
     }
     printf("\nNow processing the largest file named %s\n", fileName);
+    createDirectory(fileName);
 }
 
 void processSmall()
@@ -211,12 +246,39 @@ void processSmall()
 
     }
     printf("\nNow processing the smallest file named %s\n", fileName);
+    createDirectory(fileName);
 }
 
 void processName()
 {
-    char* fileName = malloc(sizeof(char) * 20);
-    printf("you have processed name");
+    // Large parts of this code was taken from Module 3, Exploration: Directories
+    int input;
+    DIR* currDir = opendir(".");
+    struct dirent *aDir;
+    struct stat dirStat;
+    char fileName[256];
+
+    while(input != 1){
+        //get file name from user
+        printf("Enter the complete file name: ");
+        scanf("%256s", fileName);
+        
+        DIR* currDir = opendir(".");
+        // Go through all the entries in current directory
+        while((aDir = readdir(currDir)) != NULL){
+            //check file name
+            if(strncmp(fileName, aDir->d_name, strlen(aDir->d_name)) == 0){
+                input = 1;
+                break;
+            }
+        
+        }
+        if(input != 1){ 
+            printf("\nNo file found by the name %s, try again.\n\n", fileName);
+        }
+    }
+    printf("\nNow processing the chosen file named %s", fileName);
+    createDirectory(fileName);
 }
 
 int promptUserSecond()
