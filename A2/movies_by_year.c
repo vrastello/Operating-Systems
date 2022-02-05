@@ -128,21 +128,26 @@ void processYear(char* filePath, int year, struct movie *list)
     char yearString[5];
     int first = 1;
 
+    // convert year to string
     snprintf(yearString, 5, "%d", year);
     
     while (list != NULL)
     {
+        // if year matches year of struct create file for year with movie titles
         if (strncmp(list->year, yearString, strlen(yearString)) == 0)
         {
+            // create file path name and file with correct permissions
             snprintf(rootPath, sizeof(rootPath), "./%s/%s.txt", filePath, yearString);
             fd = open(rootPath, O_RDWR | O_CREAT | O_APPEND, 0640);
             
+            // catch errors
             if (fd == -1){
                 printf("open() failed on \"%s\"\n", rootPath);
                 perror("Error");
                 exit(1);
 	        }
-
+            
+            //write titles to file
             char message[256] = "";
             snprintf(message, sizeof(message), "%s\n", list->title);
             write(fd, message, strlen(message));
@@ -154,17 +159,22 @@ void processYear(char* filePath, int year, struct movie *list)
 
 void createDirectory(char *fileName)
 {
+    // random seed and create random number
+    time_t t;
+    srand((unsigned) time(&t));
     int r = rand() % 100000;
     char dest[] = ONID;
     char source[7];
     struct movie *list = processFile(fileName);
 
+    //create directory name and create directory with correct permissions
     snprintf(source, 7, "%d", r);
     strcat(dest, source);
     mkdir(dest, 0750);
 
     printf("\nCreated directory with name %s", dest);
 
+    // loop through possible years and call function to process year
     for(int i = 1900; i <= 2022; i++){
 
         processYear(dest, i, list);
@@ -281,6 +291,7 @@ void processName()
             }
         
         }
+        // if no file found tell user
         if(input != 1){ 
             printf("\nNo file found by the name %s, try again.\n\n", fileName);
         }
@@ -319,6 +330,7 @@ int promptUser()
 {
     int input;
 
+    // prompts for for user
     while( input != 2 ){
 
         printf("\n1. Select file to process\n");
