@@ -8,6 +8,7 @@
 #include <string.h>
 #include <dirent.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
@@ -127,10 +128,38 @@ void changeDirectory(struct command *currCommand)
   printf("%s", getcwd(curr, 256));
 }
 
-int promptUser()
+void status(int childStatus, bool normalExit)
+{
+  if(normalExit){
+    printf("exit value %d\n", childStatus);
+  }
+  else{
+    printf("terminated by signal %d\n", childStatus);
+  }
+}
+
+void check_errors(struct command *user_cmd)
+{
+  printf("%s ", user_cmd->comm);
+  printf("%s ", user_cmd->input);
+  printf("%s ", user_cmd->output);
+  if(user_cmd->background){
+    printf("background is true\n");
+  }     
+
+  int i = 0;
+  while(user_cmd->args[i] != NULL){
+    printf("%s ", user_cmd->args[i]);
+    i++;
+  }
+}
+
+int main(int argc)
 {
     char input[MAX_LINE];
     char temp[MAX_LINE];
+    int  childStatus = 0;
+    bool normalExit = true;
 
     // prompts for for user
     while(true){
@@ -154,30 +183,46 @@ int promptUser()
           break;
         }
 
+        //usable input
         struct command *user_cmd = parseCommand(input);
+        check_errors(user_cmd);
 
+        //cd
         if(strncmp(user_cmd->comm, "cd", strlen(user_cmd->comm)) == 0){
           changeDirectory(user_cmd);
         }
 
-        printf("%s ", user_cmd->comm);
-        printf("%s ", user_cmd->input);
-        printf("%s ", user_cmd->output);
-        if(user_cmd->background){
-          printf("background is true\n");
-        }     
+        //status
+        if(strncmp(user_cmd->comm, "status", strlen(user_cmd->comm)) == 0){
+          status(childStatus, normalExit);
+          fflush(stdout);
+        }
+        //other commands
+        else{
+          pid_t childPid = fork();
 
-        int i = 0;
-        while(user_cmd->args[i] != NULL){
-          printf("%s ", user_cmd->args[i]);
-          i++;
+          if(childPid == -1){
+            perror("fork() failed!");
+            exit(1);
+          } else if(childPid == 0){
+            // Child process
+            sleep(10);
+            exit(0);
+          } else{
+            printf("Child's pid = %d\n", childPid);
+            childPid = waitpid(childPid, &childStatus, 0);
+            printf("waitpid returned value %d\n", childPid);
+            if(WIFEXITED(childStatus)){
+              normalExit = true;
+              childStatus = WEXITSTATUS(childStatus);
+            } 
+            else{
+              normalExit = false;
+              childStatus = WTERMSIG(childStatus);
+            }
+          }
         }
     }
     processExit();
     return 0;
-}
-
-int main(int argc)
-{
-    promptUser();
 }
