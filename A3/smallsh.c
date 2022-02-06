@@ -107,6 +107,26 @@ void freeAll(struct command *currCommand)
 
 }
 
+void changeDirectory(struct command *currCommand)
+{
+  char *path;
+  char curr[1048];
+  char rootPath[1048] = "";
+
+  if (currCommand->args[0] == NULL){
+    path = getenv("HOME");
+    chdir(path);
+  }
+
+  else{
+    path = currCommand->args[0];
+    snprintf(rootPath, sizeof(rootPath), "./%s", path);
+    chdir(rootPath);
+  }
+
+  printf("%s", getcwd(curr, 256));
+}
+
 int promptUser()
 {
     char input[MAX_LINE];
@@ -135,6 +155,10 @@ int promptUser()
         }
 
         struct command *user_cmd = parseCommand(input);
+
+        if(strncmp(user_cmd->comm, "cd", strlen(user_cmd->comm)) == 0){
+          changeDirectory(user_cmd);
+        }
 
         printf("%s ", user_cmd->comm);
         printf("%s ", user_cmd->input);
