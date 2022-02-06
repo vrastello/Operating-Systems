@@ -138,8 +138,9 @@ void status(int childStatus, bool normalExit)
   }
 }
 
-void check_errors(struct command *user_cmd)
+void check_errors(struct command *user_cmd, int pid)
 {
+  printf("%d ", pid);
   printf("%s ", user_cmd->comm);
   printf("%s ", user_cmd->input);
   printf("%s ", user_cmd->output);
@@ -160,6 +161,7 @@ int main(int argc)
     char temp[MAX_LINE];
     int  childStatus = 0;
     bool normalExit = true;
+    int pid = getpid();
 
     // prompts for for user
     while(true){
@@ -185,7 +187,7 @@ int main(int argc)
 
         //usable input
         struct command *user_cmd = parseCommand(input);
-        check_errors(user_cmd);
+        check_errors(user_cmd, pid);
 
         //cd
         if(strncmp(user_cmd->comm, "cd", strlen(user_cmd->comm)) == 0){
