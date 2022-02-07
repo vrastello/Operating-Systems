@@ -2,6 +2,12 @@
 // uncomment the following line or you might get a compiler warning
 //#define _GNU_SOURCE
 
+/* 
+SOURCES:
+ C tutorial https://www.youtube.com/watch?v=0qSU0nxIZiE
+ All explorations in module 4 and 5
+*/
+
 #include <stdio.h>
 #include <fcntl.h>
 #include <stdlib.h>
@@ -14,30 +20,32 @@
 #include <unistd.h>
 #include <stdbool.h>
 
+// MAX_ARG_SIZE is to make array elements same size for simpler implementation
 #define MAX_ARG_SIZE 50
 #define MAX_LINE 2048
 #define MAX_ARGS 512
-#define comment "#"
+#define COMMENT "#"
+#define EXPAND "$$"
+#define JOB_ID_SIZE 20
 
 /* struct for command information */
 struct command
 {
     char *comm;
-    // array of pointers to args 
     char *args[MAX_ARGS];
     char *input;
     char *output;
     bool *background;
 };
 
-//iterate to last value and check for &, set background if so
+//iterate to last value and check for &, set background to true if found
 struct command *processCommand(struct command *currCommand)
 {
-  //iterate to last value
   int i = 0;
   char *temp = NULL;
   bool *val = true;
 
+  //iterate to last value
   while(currCommand->args[i] != NULL && i < MAX_ARGS){
     temp = currCommand->args[i];
     i++;
@@ -64,6 +72,11 @@ struct command *parseCommand(char *input)
     char *token = strtok_r(input, " \n", &saveptr);
     currCommand->comm = calloc(strlen(token) + 1, sizeof(char));
     strcpy(currCommand->comm, token);
+
+    // add command to list to make exec function easier
+    currCommand->args[i] = calloc(MAX_ARG_SIZE, sizeof(char));
+    strcpy(currCommand->args[i], token);
+    i++;
 
     // The next token is the array of args
     token = strtok_r(NULL, " \n", &saveptr);
@@ -155,6 +168,30 @@ void check_errors(struct command *user_cmd, int pid)
   }
 }
 
+char* expand_input(char* input, char* expand, char* parentJobId) {
+    //parts of this code were inspired from c tutorial in sources
+
+    //find first instance of $$, sets pointer to that part of string
+    char* input_pointer = strstr(input, expand);
+    //if none found return null breaks loop
+    if (input_pointer == NULL) {
+        return NULL;
+    }
+
+    //inserts additonal memory into string at substring_source pointer to expand parentJobId
+    memmove(
+        input_pointer + strlen(parentJobId),
+        input_pointer + strlen(expand),
+        strlen(input_pointer) - strlen(expand) + 1
+    );
+
+    //copies parentjobId starting at pointer where first instance of $$ starts
+    memcpy(input_pointer, parentJobId, strlen(parentJobId));
+
+    // returns pointer to where parentjobID ends to run code on the rest of the string
+    return input_pointer + strlen(parentJobId);
+}
+
 int main(int argc)
 {
     char input[MAX_LINE];
@@ -162,6 +199,9 @@ int main(int argc)
     int  childStatus = 0;
     bool normalExit = true;
     int pid = getpid();
+    char parentJobId[JOB_ID_SIZE];
+    // convert pid to string for expansion
+    snprintf(parentJobId, JOB_ID_SIZE, "%d", pid);
 
     // prompts for for user
     while(true){
@@ -177,13 +217,16 @@ int main(int argc)
           continue;
         }
         // if comment entered
-        if(strncmp(token, comment, strlen(comment)) == 0){
+        if(strncmp(token, COMMENT, strlen(COMMENT)) == 0){
           continue;
         }
         //exit
         if(strncmp(token, "exit", strlen(token)) == 0){
           break;
         }
+
+        //expand variable $$, loop to expand every instance
+        while(expand_input(input, EXPAND, parentJobId));
 
         //usable input
         struct command *user_cmd = parseCommand(input);
@@ -214,6 +257,7 @@ int main(int argc)
             printf("Child's pid = %d\n", childPid);
             childPid = waitpid(childPid, &childStatus, 0);
             printf("waitpid returned value %d\n", childPid);
+            // set variables for built in status function
             if(WIFEXITED(childStatus)){
               normalExit = true;
               childStatus = WEXITSTATUS(childStatus);
