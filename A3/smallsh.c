@@ -20,7 +20,7 @@ SOURCES:
 #include <unistd.h>
 #include <stdbool.h>
 
-// MAX_ARG_SIZE is to make array elements same size for simpler implementation
+// MAX_ARG_SIZE is to make array elements same size for indexing
 #define MAX_ARG_SIZE 50
 #define MAX_LINE 2048
 #define MAX_ARGS 512
@@ -32,14 +32,14 @@ SOURCES:
 struct command
 {
     char *comm;
-    char *args[MAX_ARGS];
+    char *args[512];
     char *input;
     char *output;
     bool *background;
 };
 
 //iterate to last value and check for &, set background to true if found
-struct command *processCommand(struct command *currCommand)
+struct command *processArgs(struct command *currCommand)
 {
   int i = 0;
   char *temp = NULL;
@@ -50,11 +50,10 @@ struct command *processCommand(struct command *currCommand)
     temp = currCommand->args[i];
     i++;
   }
-  // check if last value is & and set last value to null if so
+  // check if last value is &, and set background to true if so
   if(temp != NULL && (strncmp(temp, "&", strlen(temp)) == 0)){
     currCommand->background = calloc(1, 10);
     currCommand->background = val;
-    memset(currCommand->args + (i - 1), '\0', MAX_ARG_SIZE);
   }
 
   return currCommand;
@@ -73,7 +72,7 @@ struct command *parseCommand(char *input)
     currCommand->comm = calloc(strlen(token) + 1, sizeof(char));
     strcpy(currCommand->comm, token);
 
-    // add command to list to make exec function easier
+    // add command to list to make execvp function easier
     currCommand->args[i] = calloc(MAX_ARG_SIZE, sizeof(char));
     strcpy(currCommand->args[i], token);
     i++;
@@ -105,7 +104,10 @@ struct command *parseCommand(char *input)
       n++;
     }
 
-    processCommand(currCommand);
+    // if at least one arg
+    if(n > 0){
+      processArgs(currCommand);
+    }
 
     return currCommand;
 }
@@ -127,21 +129,24 @@ void changeDirectory(struct command *currCommand)
   char curr[1048];
   char rootPath[1048] = "";
 
-  if (currCommand->args[0] == NULL){
+  // check for arg sent to cd, if none go to env HOME
+  if (currCommand->args[1] == NULL){
     path = getenv("HOME");
     chdir(path);
   }
 
+  // else take arg as path
   else{
-    path = currCommand->args[0];
-    snprintf(rootPath, sizeof(rootPath), "./%s", path);
+    path = currCommand->args[1];
+    snprintf(rootPath, sizeof(rootPath), "%s", path);
     chdir(rootPath);
   }
 
-  printf("%s", getcwd(curr, 256));
+  printf("%s\n", getcwd(curr, 256));
 }
 
 void status(int childStatus, bool normalExit)
+// print status of last completed task
 {
   if(normalExit){
     printf("exit value %d\n", childStatus);
@@ -192,6 +197,28 @@ char* expand_input(char* input, char* expand, char* parentJobId) {
     return input_pointer + strlen(parentJobId);
 }
 
+char* argsIntoArray(struct command *user_cmd)
+{
+  // restructure new array to be compatible with execvp function
+  int arrSize = i + 1;
+  char *newArr[arrSize];
+  i = 0;
+
+  while(i <= arrSize){
+    newArr[i] = calloc(MAX_ARG_SIZE, sizeof(char));
+    if(i < arrSize - 1){
+      strcpy(newArr[i], currCommand->args[i]);
+    }
+    // add null to last value of arr
+    else{
+      newArr[i] = NULL;
+    }
+    i++;
+  }
+
+  return newArr;
+}
+
 int main(int argc)
 {
     char input[MAX_LINE];
@@ -235,12 +262,14 @@ int main(int argc)
         //cd
         if(strncmp(user_cmd->comm, "cd", strlen(user_cmd->comm)) == 0){
           changeDirectory(user_cmd);
+          continue;
         }
 
         //status
         if(strncmp(user_cmd->comm, "status", strlen(user_cmd->comm)) == 0){
           status(childStatus, normalExit);
           fflush(stdout);
+          continue;
         }
         //other commands
         else{
