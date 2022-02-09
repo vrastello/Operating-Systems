@@ -21,12 +21,12 @@ SOURCES:
 #include <stdbool.h>
 
 // MAX_ARG_SIZE is to make array elements same size for indexing
-#define MAX_ARG_SIZE 50
+#define MAX_ARG_SIZE 256
 #define MAX_LINE 2048
 #define MAX_ARGS 512
 #define COMMENT "#"
 #define EXPAND "$$"
-#define JOB_ID_SIZE 20
+#define JOB_ID_SIZE 100
 
 /* struct for command information */
 struct command
@@ -54,6 +54,8 @@ struct command *processArgs(struct command *currCommand)
   if(temp != NULL && (strncmp(temp, "&", strlen(temp)) == 0)){
     currCommand->background = calloc(1, 10);
     currCommand->background = val;
+    //remove & from args array
+    memset(currCommand->args + (i - 1), '\0', MAX_ARG_SIZE);
   }
 
   return currCommand;
@@ -85,11 +87,17 @@ struct command *parseCommand(char *input)
     {
       //save input
       if(strncmp(token, "<", strlen(token)) == 0){
+        //increment token
+        token = strtok_r(NULL, " \n", &saveptr);
+        // save next arg as input
         currCommand->input = calloc(strlen(token) + 1, sizeof(char));
         strcpy(currCommand->input, token);
       }
       //save output
       else if(strncmp(token, ">", strlen(token)) == 0){
+        //increment token
+        token = strtok_r(NULL, " \n", &saveptr);
+        // save next arg as ouput
         currCommand->output = calloc(strlen(token) + 1, sizeof(char));
         strcpy(currCommand->output, token);
       }
@@ -117,12 +125,6 @@ void processExit()
 
 }
 
-//frees all memory allocated to command and it's members
-void freeAll(struct command *currCommand)
-{
-
-}
-
 void changeDirectory(struct command *currCommand)
 {
   char *path;
@@ -141,18 +143,27 @@ void changeDirectory(struct command *currCommand)
     snprintf(rootPath, sizeof(rootPath), "%s", path);
     chdir(rootPath);
   }
-
-  printf("%s\n", getcwd(curr, 256));
 }
 
-void status(int childStatus, bool normalExit)
+void status(int currChildStatus, bool normalExit)
 // print status of last completed task
 {
   if(normalExit){
-    printf("exit value %d\n", childStatus);
+    printf("exit value %d\n", currChildStatus);
   }
   else{
-    printf("terminated by signal %d\n", childStatus);
+    printf("terminated by signal %d\n", currChildStatus);
+  }
+}
+
+void backgroundStatus(int currChildStatus, bool normalExit, pid_t pid)
+// print status of last completed task
+{
+  if(normalExit){
+    printf("background pid %d is done: exit value %d\n", pid, currChildStatus);
+  }
+  else{
+    printf("background pid %d is done: terminated by signal %d\n", pid, currChildStatus);
   }
 }
 
@@ -197,34 +208,17 @@ char* expand_input(char* input, char* expand, char* parentJobId) {
     return input_pointer + strlen(parentJobId);
 }
 
-char* argsIntoArray(struct command *user_cmd)
-{
-  // restructure new array to be compatible with execvp function
-  int arrSize = i + 1;
-  char *newArr[arrSize];
-  i = 0;
-
-  while(i <= arrSize){
-    newArr[i] = calloc(MAX_ARG_SIZE, sizeof(char));
-    if(i < arrSize - 1){
-      strcpy(newArr[i], currCommand->args[i]);
-    }
-    // add null to last value of arr
-    else{
-      newArr[i] = NULL;
-    }
-    i++;
-  }
-
-  return newArr;
-}
-
 int main(int argc)
 {
     char input[MAX_LINE];
     char temp[MAX_LINE];
-    int  childStatus = 0;
+    int  childStatus;
+    int  currChildStatus = 0;
     bool normalExit = true;
+    int  backgroundPids[100];
+    memset(backgroundPids, 0, sizeof(backgroundPids));
+    int  arrPosition = 0;
+
     int pid = getpid();
     char parentJobId[JOB_ID_SIZE];
     // convert pid to string for expansion
@@ -232,6 +226,35 @@ int main(int argc)
 
     // prompts for for user
     while(true){
+
+        // check for completed background jobs, and clean up zombies, print job completion
+        int j = 0;
+        for(j = 0; j < 100; j++){
+
+          if(backgroundPids[j] != 0){
+            pid_t backChildPid = waitpid(backgroundPids[j], &childStatus, WNOHANG);
+
+            if(backChildPid != 0){
+              arrPosition -= 1;
+              if(WIFEXITED(childStatus)){
+                normalExit = true;
+                currChildStatus = WEXITSTATUS(childStatus);
+              } 
+              else{
+                normalExit = false;
+                currChildStatus = WTERMSIG(childStatus);
+              }
+              backgroundStatus(currChildStatus, normalExit, backgroundPids[j]);
+              fflush(stdout);
+              memset(&backgroundPids[j], 0, sizeof(int));
+              waitpid(backgroundPids[j], &childStatus, WNOHANG);
+            }
+          }
+        }
+
+        //reset background job array position for new background jobs to be added 
+        printf("%d\n", j);
+        printf("%d\n", arrPosition);
 
         printf(": ");
         fgets(input, MAX_LINE, stdin);
@@ -257,7 +280,7 @@ int main(int argc)
 
         //usable input
         struct command *user_cmd = parseCommand(input);
-        check_errors(user_cmd, pid);
+        // check_errors(user_cmd, pid);
 
         //cd
         if(strncmp(user_cmd->comm, "cd", strlen(user_cmd->comm)) == 0){
@@ -267,7 +290,7 @@ int main(int argc)
 
         //status
         if(strncmp(user_cmd->comm, "status", strlen(user_cmd->comm)) == 0){
-          status(childStatus, normalExit);
+          status(currChildStatus, normalExit);
           fflush(stdout);
           continue;
         }
@@ -279,22 +302,89 @@ int main(int argc)
             perror("fork() failed!");
             exit(1);
           } else if(childPid == 0){
-            // Child process
-            sleep(10);
-            exit(0);
-          } else{
-            printf("Child's pid = %d\n", childPid);
-            childPid = waitpid(childPid, &childStatus, 0);
-            printf("waitpid returned value %d\n", childPid);
-            // set variables for built in status function
-            if(WIFEXITED(childStatus)){
-              normalExit = true;
-              childStatus = WEXITSTATUS(childStatus);
-            } 
-            else{
-              normalExit = false;
-              childStatus = WTERMSIG(childStatus);
+            // restructure new array to be compatible with execvp function
+            int i = 0;
+            //iterate to last value to get size of array
+            while(user_cmd->args[i] != NULL && i < MAX_ARGS){
+              i++;
             }
+            // make new array
+            int arrSize = i + 1;
+            char *newArr[arrSize];
+            i = 0;
+            while(i <= arrSize){
+              if(i < arrSize - 1){
+                newArr[i] = calloc(MAX_ARG_SIZE, sizeof(char));
+                strcpy(newArr[i], user_cmd->args[i]);
+              }
+              // add null to last value of arr
+              else{
+                newArr[i] = NULL;
+              }
+              i++;
+            }
+
+            // large portions of this were taken from Module 5 exploration processes and I/O
+            if(user_cmd->input != NULL){
+              //open source file
+              int sourceFD = open(user_cmd->input, O_RDONLY);
+              if (sourceFD == -1) { 
+                perror("source open()"); 
+                exit(1); 
+	            }
+
+              // Redirect stdin to source file
+              int result = dup2(sourceFD, 0);
+              if (result == -1) { 
+                perror("source dup2()"); 
+                exit(2); 
+              }
+            }
+
+            if(user_cmd->output != NULL){
+              // Open target file
+              int targetFD = open(user_cmd->output, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+              if (targetFD == -1) { 
+                perror("target open()"); 
+                exit(1); 
+              }
+              
+              // Redirect stdout to target file
+              int result = dup2(targetFD, 1);
+              if (result == -1) { 
+                perror("target dup2()"); 
+                exit(2); 
+              }
+            }
+
+            // Child process
+            execvp(user_cmd->comm, newArr);
+            // if execvp error return exit val 1, setting status to 1
+            perror("execvp");
+            exit(1);
+            break;
+
+          // parent process
+          } else{
+              if(user_cmd->background){
+                backgroundPids[arrPosition] = childPid;
+                arrPosition += 1;
+                printf("background pid is %d\n", childPid);
+                fflush(stdout);
+                childPid = waitpid(childPid, &childStatus, WNOHANG);
+              }
+              else{
+                childPid = waitpid(childPid, &childStatus, 0);
+              }
+              // set variables for built in status function
+              if(WIFEXITED(childStatus)){
+                normalExit = true;
+                currChildStatus = WEXITSTATUS(childStatus);
+              } 
+              else{
+                normalExit = false;
+                currChildStatus = WTERMSIG(childStatus);
+              }
           }
         }
     }
