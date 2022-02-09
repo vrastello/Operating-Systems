@@ -141,7 +141,7 @@ void changeDirectory(struct command *currCommand)
 }
 
 void status(int currChildStatus, bool normalExit)
-// print status of last completed task
+// print status of last completed foreground process
 {
   if(normalExit){
     printf("exit value %d\n", currChildStatus);
@@ -153,7 +153,7 @@ void status(int currChildStatus, bool normalExit)
 }
 
 void backgroundStatus(int currChildStatus, bool normalExit, pid_t pid)
-// print status of last completed task
+// print status of last completed background process
 {
   if(normalExit){
     printf("background pid %d is done: exit value %d\n", pid, currChildStatus);
@@ -190,14 +190,22 @@ char* expand_input(char* input, char* expand, char* parentJobId) {
 
 int main(int argc)
 {
+    //for inputs and checking if input blank
     char input[MAX_LINE];
     char temp[MAX_LINE];
+
     int  childStatus;
+
+    // for status function
     int  currChildStatus = 0;
     bool normalExit = true;
+
+        // for saving postion of background job pid array
     int  backgroundPids[100];
     memset(backgroundPids, 0, sizeof(backgroundPids));
     int  arrPosition = 0;
+
+    // for toggling on and off foreground mode
     int onSwitch = 0;
 
     int pid = getpid();
@@ -435,6 +443,16 @@ int main(int argc)
           }
         }
     }
-    processExit();
+    // kill any children in progress before exit
+    int k = 0;
+    for(k = 0; k < 100; k++){
+    if(backgroundPids[k] != 0){
+      pid_t exitPid = waitpid(backgroundPids[k], &childStatus, WNOHANG);
+    
+      if(exitPid != -1){
+        kill(exitPid, SIGKILL);
+      }
+    }
+  }
     return EXIT_SUCCESS;
 }
