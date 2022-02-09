@@ -120,11 +120,6 @@ struct command *parseCommand(char *input)
     return currCommand;
 }
 
-void processExit()
-{
-
-}
-
 void changeDirectory(struct command *currCommand)
 {
   char *path;
@@ -154,6 +149,7 @@ void status(int currChildStatus, bool normalExit)
   else{
     printf("terminated by signal %d\n", currChildStatus);
   }
+  fflush(stdout);
 }
 
 void backgroundStatus(int currChildStatus, bool normalExit, pid_t pid)
@@ -165,23 +161,7 @@ void backgroundStatus(int currChildStatus, bool normalExit, pid_t pid)
   else{
     printf("background pid %d is done: terminated by signal %d\n", pid, currChildStatus);
   }
-}
-
-void check_errors(struct command *user_cmd, int pid)
-{
-  printf("%d ", pid);
-  printf("%s ", user_cmd->comm);
-  printf("%s ", user_cmd->input);
-  printf("%s ", user_cmd->output);
-  if(user_cmd->background){
-    printf("background is true\n");
-  }     
-
-  int i = 0;
-  while(user_cmd->args[i] != NULL){
-    printf("%s ", user_cmd->args[i]);
-    i++;
-  }
+  fflush(stdout);
 }
 
 char* expand_input(char* input, char* expand, char* parentJobId) {
@@ -218,6 +198,7 @@ int main(int argc)
     int  backgroundPids[100];
     memset(backgroundPids, 0, sizeof(backgroundPids));
     int  arrPosition = 0;
+    int onSwitch = 0;
 
     int pid = getpid();
     char parentJobId[JOB_ID_SIZE];
@@ -235,7 +216,6 @@ int main(int argc)
             pid_t backChildPid = waitpid(backgroundPids[j], &childStatus, WNOHANG);
 
             if(backChildPid != 0){
-              arrPosition -= 1;
               if(WIFEXITED(childStatus)){
                 normalExit = true;
                 currChildStatus = WEXITSTATUS(childStatus);
@@ -245,16 +225,18 @@ int main(int argc)
                 currChildStatus = WTERMSIG(childStatus);
               }
               backgroundStatus(currChildStatus, normalExit, backgroundPids[j]);
-              fflush(stdout);
+              // empty array at position to free up index
               memset(&backgroundPids[j], 0, sizeof(int));
               waitpid(backgroundPids[j], &childStatus, WNOHANG);
             }
           }
         }
 
-        //reset background job array position for new background jobs to be added 
-        printf("%d\n", j);
-        printf("%d\n", arrPosition);
+        //reset background job array position for new background jobs to be added if at end of array
+        // essentially a circular array
+        if(arrPosition == 99){
+          arrPosition = 0;
+        }
 
         printf(": ");
         fgets(input, MAX_LINE, stdin);
@@ -291,7 +273,6 @@ int main(int argc)
         //status
         if(strncmp(user_cmd->comm, "status", strlen(user_cmd->comm)) == 0){
           status(currChildStatus, normalExit);
-          fflush(stdout);
           continue;
         }
         //other commands
@@ -300,8 +281,12 @@ int main(int argc)
 
           if(childPid == -1){
             perror("fork() failed!");
+            fflush(stdout);
             exit(1);
-          } else if(childPid == 0){
+          } 
+          
+          // Child process-------------------------------------------------------------------------
+          else if(childPid == 0){
             // restructure new array to be compatible with execvp function
             int i = 0;
             //iterate to last value to get size of array
@@ -329,7 +314,8 @@ int main(int argc)
               //open source file
               int sourceFD = open(user_cmd->input, O_RDONLY);
               if (sourceFD == -1) { 
-                perror("source open()"); 
+                perror("source open()");
+                fflush(stdout);
                 exit(1); 
 	            }
 
@@ -337,6 +323,7 @@ int main(int argc)
               int result = dup2(sourceFD, 0);
               if (result == -1) { 
                 perror("source dup2()"); 
+                fflush(stdout);
                 exit(2); 
               }
             }
@@ -345,7 +332,8 @@ int main(int argc)
               // Open target file
               int targetFD = open(user_cmd->output, O_WRONLY | O_CREAT | O_TRUNC, 0777);
               if (targetFD == -1) { 
-                perror("target open()"); 
+                perror("target open()");
+                fflush(stdout);
                 exit(1); 
               }
               
@@ -353,41 +341,100 @@ int main(int argc)
               int result = dup2(targetFD, 1);
               if (result == -1) { 
                 perror("target dup2()"); 
+                fflush(stdout);
                 exit(2); 
               }
             }
 
-            // Child process
+
+            struct sigaction SIGINT_action = { 0 };
+            struct sigaction ignore_action = { 0 };
+
+            // ignore SIGTSTP action if child 
+            ignore_action.sa_handler = SIG_IGN;
+            sigfillset(&ignore_action.sa_mask);
+            ignore_action.sa_flags = SA_RESTART;
+            sigaction(SIGTSTP, &ignore_action, NULL);
+
+            //if not background job set up singal handler to default action on SIGINT
+            if(!user_cmd->background){
+              SIGINT_action.sa_handler = SIG_DFL;
+              sigfillset(&SIGINT_action.sa_mask);
+              SIGINT_action.sa_flags = SA_RESTART;
+              sigaction(SIGINT, &SIGINT_action, NULL);
+            }
+
             execvp(user_cmd->comm, newArr);
             // if execvp error return exit val 1, setting status to 1
             perror("execvp");
+            fflush(stdout);
             exit(1);
             break;
 
-          // parent process
-          } else{
-              if(user_cmd->background){
-                backgroundPids[arrPosition] = childPid;
-                arrPosition += 1;
-                printf("background pid is %d\n", childPid);
+
+          } 
+
+          // Parent process-------------------------------------------------------------------------
+          else{
+            //set up singal handler to ignore SIGINT
+            struct sigaction SIGINT_action = { 0 };
+            struct sigaction SIGTSTP_action = { 0 };
+
+            //ignore SIGINT if parent
+            SIGINT_action.sa_handler = SIG_IGN;
+            sigfillset(&SIGINT_action.sa_mask);
+            SIGINT_action.sa_flags = SA_RESTART;
+            sigaction(SIGINT, &SIGINT_action, NULL);
+
+            // Handler for SIGUSR2, toggles on and off background argument
+            void handle_SIGTSTP(int signo){
+              char* enter = "\nEntering foreground-only mode (& is now ignored)\n";
+              char* exit = "\nExiting foreground-only mode\n";
+              if(onSwitch == 0){
+                write(STDOUT_FILENO, enter, 51);
+                onSwitch = 1;
+              }
+              else{
+                write(STDOUT_FILENO, exit, 31);
+                onSwitch = 0;
+              }
+            }           
+
+            //defer to handler for SIGTSTP if parent
+            SIGTSTP_action.sa_handler = handle_SIGTSTP;
+            sigfillset(&SIGTSTP_action.sa_mask);
+            SIGTSTP_action.sa_flags = SA_RESTART;
+            sigaction(SIGTSTP, &SIGTSTP_action, NULL);
+
+            // save background job pid to array and print it's pid
+
+            if(user_cmd->background && onSwitch == 0){
+              backgroundPids[arrPosition] = childPid;
+              arrPosition += 1;
+              printf("background pid is %d\n", childPid);
+              fflush(stdout);
+              childPid = waitpid(childPid, &childStatus, WNOHANG);
+            }
+            else{
+              //if foreground job and killed by signal, print out signal
+              childPid = waitpid(childPid, &childStatus, 0);
+              if(WIFSIGNALED(childStatus)){
+                printf("\nterminated by signal %d\n", WTERMSIG(childStatus));
                 fflush(stdout);
-                childPid = waitpid(childPid, &childStatus, WNOHANG);
               }
-              else{
-                childPid = waitpid(childPid, &childStatus, 0);
-              }
-              // set variables for built in status function
-              if(WIFEXITED(childStatus)){
-                normalExit = true;
-                currChildStatus = WEXITSTATUS(childStatus);
-              } 
-              else{
-                normalExit = false;
-                currChildStatus = WTERMSIG(childStatus);
-              }
+            }
+            // set variables for built in status function
+            if(WIFEXITED(childStatus)){
+              normalExit = true;
+              currChildStatus = WEXITSTATUS(childStatus);
+            } 
+            else{
+              normalExit = false;
+              currChildStatus = WTERMSIG(childStatus);
+            }
           }
         }
     }
     processExit();
-    return 0;
+    return EXIT_SUCCESS;
 }
