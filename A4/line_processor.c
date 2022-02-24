@@ -27,7 +27,7 @@ int count_2 = 0;
 int prod_idx_2 = 0;
 int con_idx_2 = 0;
 
-char buffer_3[LINE_MAX * CHAR_MAX * sizeof(char)];
+char buffer_3[LINE_MAX][CHAR_MAX];
 int count_3 = 0;
 int prod_idx_3 = 0;
 int con_idx_3 = 0;
@@ -52,14 +52,15 @@ void put_buff_1(char *input){
 void *get_input()
 {
   char input[CHAR_MAX];
+  memset(input, '\0', CHAR_MAX);
+  strcpy(input, get_user_input());
   while(strncmp(input, TERMINATOR, strlen(TERMINATOR)) != 0){
-    strcpy(input, get_user_input());
-    if(strncmp(input, TERMINATOR, strlen(input)) == 0){
-      break;
-    }
     put_buff_1(input);
     memset(input, '\0', CHAR_MAX);
+    strcpy(input, get_user_input());
   }
+
+  put_buff_1(input);
   return NULL;
 }
 
@@ -107,16 +108,14 @@ void *line_separator()
 {
   char input[CHAR_MAX];
   memset(input, '\0', CHAR_MAX);
+  strcpy(input, get_buff_1());
   while(strncmp(input, TERMINATOR, strlen(TERMINATOR)) != 0){
-      strcpy(input, get_buff_1());
-      if(strncmp(input, TERMINATOR, strlen(input)) == 0){
-        break;
-      }
       expand_input(input, "\n", " ");
       put_buff_2(input);
       memset(input, '\0', CHAR_MAX);
+      strcpy(input, get_buff_1());
   }
-  
+  put_buff_2(input);
   return NULL;
 }
 
@@ -130,10 +129,9 @@ char *get_buff_2(){
 
 void put_buff_3(char *input){
   // Put the item in the buffer
-  int len = strlen(input);
-  strcpy(&buffer_3[prod_idx_3], input);
+  strcpy(&buffer_3[prod_idx_3][0], input);
   // Increment the index where the next item will be put.
-  prod_idx_3 = prod_idx_3 + len;
+  prod_idx_3 = prod_idx_3 + 1;
   count_3++;
 }
 
@@ -141,22 +139,75 @@ void *plus_sign()
 {
   char input[CHAR_MAX];
   memset(input, '\0', CHAR_MAX);
+  strcpy(input, get_buff_2());
   while(strncmp(input, TERMINATOR, strlen(TERMINATOR)) != 0){
-      strcpy(input, get_buff_2());
-      if(strncmp(input, TERMINATOR, strlen(input)) == 0){
-        break;
-      }
       while(expand_input(input, "++", "^"));
       put_buff_3(input);
       memset(input, '\0', CHAR_MAX);
+      strcpy(input, get_buff_2());
   }
-  
+  put_buff_3(input);
   return NULL;
+}
+
+char *get_buff_3(){
+  char *buff_3_input = malloc(CHAR_MAX * sizeof(char));
+  strcpy(buff_3_input, buffer_3[con_idx_3]);
+  con_idx_3 = con_idx_3 + 1;
+  count_3--;
+  return buff_3_input;
+}
+
+void process_buff_3(char *large_string)
+{
+  //take input, separate out substring of 80, save remainder to current index, print substring
+  printf("%.*s\n", OUT_MAX, large_string);
+  memset(buffer_3[con_idx_3], '\0', CHAR_MAX);
+  strcpy(&buffer_3[con_idx_3][0], large_string + OUT_MAX);
 }
 
 void *write_output()
 {
-  char output[OUT_MAX + 1];
+  char *input = malloc(CHAR_MAX * sizeof(char));
+  memset(input, '\0', CHAR_MAX);
+  strcpy(input, get_buff_3());
+  while(strncmp(input, TERMINATOR, strlen(TERMINATOR)) != 0){
+      // put code here LOL
+      if(strlen(input) >= OUT_MAX){
+        if(strlen(input) == OUT_MAX){
+          printf("%s\n", input);
+        }
+        else{
+          count_3++;
+          con_idx_3 = con_idx_3 - 1;
+          process_buff_3(input);
+        }
+      }
+      else{
+        char *curr_str = malloc(CHAR_MAX * 2 * sizeof(char));
+        char next_str[CHAR_MAX];
+        strcpy(curr_str, input);
+        while(strlen(curr_str) < OUT_MAX){
+          strcpy(next_str, get_buff_3());
+          if (strncmp(next_str, TERMINATOR, strlen(TERMINATOR)) == 0){
+            return NULL;
+          }
+          strcat(curr_str, next_str);
+          memset(next_str, '\0', CHAR_MAX);
+        }
+        if(strlen(curr_str) == OUT_MAX){
+          printf("%s\n", input);
+        }
+        else{
+          count_3++;
+          con_idx_3 = con_idx_3 - 1;
+          process_buff_3(curr_str);
+        }
+      }
+      memset(input, '\0', CHAR_MAX);
+      strcpy(input, get_buff_3());
+  }
+  return NULL;
 }
 
 int main()
@@ -164,9 +215,8 @@ int main()
   get_input();
   line_separator();
   plus_sign();
-  printf("%s", buffer_3);
-  printf("%d", strlen(buffer_3));
-  
+  write_output();
+
   return EXIT_SUCCESS;
 }
 
