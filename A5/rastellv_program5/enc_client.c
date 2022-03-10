@@ -14,6 +14,8 @@
 #define SEG_SIZE 1000
 #define CLIENT_ID "enc_client"
 #define CONN_SUCCESS "CLIENT ID CONFIRMED"
+#define KEY_HEAD "KEY"
+#define TERMINATOR "ILL BE BACK"
 
 /**
 * Client code
@@ -53,6 +55,7 @@ void setupAddressStruct(struct sockaddr_in* address,
         hostInfo->h_length);
 }
 
+//Validate inputs do not have bad data
 void checkBadInputs(int fd, off_t fsize)
 {
   //check for bad inputs in plain file
@@ -75,9 +78,68 @@ void checkBadInputs(int fd, off_t fsize)
       exit(1);
     }
   }
+  // reset file pointer to beginning for rest of program
   lseek(fd, 0, SEEK_SET);
 }
 
+//send data to server
+void sendData(int fd, off_t fsize, int socket, bool output)
+{
+  int charsSent, charsRead;
+  int segment_size = SEG_SIZE;
+  char readBuffer[segment_size];
+  char writeBuffer[segment_size];
+  memset(readBuffer, 0, sizeof(readBuffer));
+  memset(writeBuffer, 0, sizeof(writeBuffer));
+
+  // send in 1000 char increments or "chunks", rounding up
+  int num_chunk = ((fsize - 1) + (SEG_SIZE - 1)) / SEG_SIZE;
+
+  while (num_chunk != 0)
+  {
+    read(fd, writeBuffer, sizeof(writeBuffer));
+    // Remove the trailing \n 
+    writeBuffer[strcspn(writeBuffer, "\n")] = '\0';
+
+    // Send message to server
+    // Write to the server
+    size_t buf_len_bytes = strlen(writeBuffer);
+    size_t c_written = 0;
+    //loop to keep sending data in case packets are lost
+    while(c_written < buf_len_bytes){
+      ssize_t charsSent = send(socket, ((char *) writeBuffer) + c_written, buf_len_bytes - c_written, 0); 
+      if (charsSent < 0){
+        error("CLIENT: ERROR writing to socket");
+      }
+      else{
+        c_written += charsSent;
+      }
+    }
+
+    // Get return message from server
+    // Clear out the buffer again for reuse
+    memset(readBuffer, 0, sizeof(readBuffer));
+    // Read data from the socket, leaving \0 at end
+    charsRead = recv(socket, readBuffer, sizeof(readBuffer), 0); 
+    if (charsRead < 0){
+      error("CLIENT: ERROR reading from socket");
+    }
+    if(output == false){
+      printf("CLIENT: I received this from the server: \"%s\"\n", readBuffer);
+      printf("chars read: %d", charsRead);
+    }
+    else{
+      printf("encoded data-string: %s\n", readBuffer);
+    }
+    //increment chunck and clear out write buffer
+    num_chunk--;
+    memset(writeBuffer, 0, sizeof(writeBuffer));
+  }
+  //close file directory
+  close(fd);
+}
+
+// main sets up connection, performs validations and sends un-encoded data to server
 int main(int argc, char *argv[]) {
   int socketFD, portNumber, charsWritten, charsRead;
   struct sockaddr_in serverAddress;
@@ -102,19 +164,18 @@ int main(int argc, char *argv[]) {
   }
 
   int segment_size = SEG_SIZE;
-  char readBuffer[segment_size];
-  char writeBuffer[segment_size];
+  char tempBuffer[segment_size];
 
   //send identifier to server
-  memset(readBuffer, 0, sizeof(readBuffer));
+  memset(tempBuffer, 0, sizeof(tempBuffer));
   send(socketFD, CLIENT_ID, strlen(CLIENT_ID), 0);
-  recv(socketFD, readBuffer, sizeof(readBuffer), 0);
-  if(strncmp(readBuffer, CONN_SUCCESS, strlen(readBuffer)) != 0){
+  recv(socketFD, tempBuffer, sizeof(tempBuffer), 0);
+  if(strncmp(tempBuffer, CONN_SUCCESS, strlen(tempBuffer)) != 0){
     fprintf(stderr, "Client Error: could not contact enc_server on port %d\n", ntohs(serverAddress.sin_port));
     exit(2);
   }
   
-  printf("CLIENT: I received this from the server: \"%s\"\n", readBuffer);
+  printf("CLIENT: I received this from the server: \"%s\"\n", tempBuffer);
 
   //open plainfile
   char* plain = argv[1];
@@ -152,45 +213,29 @@ int main(int argc, char *argv[]) {
   checkBadInputs(plain_fd, plain_size);
   checkBadInputs(key_fd, key_size);
 
+  // //send size of plaintext data
+  // off_t temp_size = plain_size;
+  // memset(tempBuffer, 0, sizeof(tempBuffer));
+  // snprintf(tempBuffer, sizeof(tempBuffer), "%jd", temp_size);
+  // send(socketFD, tempBuffer, sizeof(tempBuffer), 0);
+  // recv(socketFD, tempBuffer, sizeof(tempBuffer), 0);
 
+  //send plaintext data
+  bool output = false;
+  sendData(plain_fd, plain_size, socketFD, output);
 
-  // send in 1000 char increments or "chunks", rounding up
-  int num_chunk = ((plain_size - 1) + (SEG_SIZE - 1)) / SEG_SIZE;
+  //send key header transmission to server, client is about to send key file
+  memset(tempBuffer, 0, sizeof(tempBuffer));
+  send(socketFD, KEY_HEAD, strlen(KEY_HEAD), 0);
+  recv(socketFD, tempBuffer, sizeof(tempBuffer), 0);
 
-  while (num_chunk != 0)
-  {
-    read(plain_fd, writeBuffer, sizeof(writeBuffer));
-    // Remove the trailing \n 
-    writeBuffer[strcspn(writeBuffer, "\n")] = '\0'; 
+  //send keyfile data
+  output = true;
+  sendData(key_fd, key_size, socketFD, output);
 
-    // Send message to server
-    // Write to the server
-    size_t buf_len_bytes = strlen(writeBuffer);
-    size_t c_written = 0;
-    //to handle in case data is lost
-    while(c_written < buf_len_bytes){
-      ssize_t response = send(socketFD, ((char *) writeBuffer) + c_written, buf_len_bytes - c_written, 0); 
-      if (charsWritten < 0){
-        error("CLIENT: ERROR writing to socket");
-      }
-      else{
-        c_written += response;
-      }
-    }
+  //send terminator transmission to server
+  send(socketFD, TERMINATOR, strlen(TERMINATOR), 0);
 
-    // Get return message from server
-    // Clear out the buffer again for reuse
-    memset(readBuffer, 0, sizeof(readBuffer));
-    // Read data from the socket, leaving \0 at end
-    charsRead = recv(socketFD, readBuffer, sizeof(readBuffer), 0); 
-    if (charsRead < 0){
-      error("CLIENT: ERROR reading from socket");
-    }
-    printf("CLIENT: I received this from the server: \"%s\"\n", readBuffer);
-    printf("chars read: %d", charsRead);
-    num_chunk--;
-  }
-  close(plain_fd);
   // Close the socket
   close(socketFD);
   return 0;

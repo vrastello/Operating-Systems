@@ -20,19 +20,22 @@ SOURCES:
 #include <unistd.h>
 #include <stdbool.h>
 
-// MAX_ARG_SIZE is to make array elements same size for indexing
+// MAX_ARG_SIZE is to make array elements in struct same size for indexing
 #define MAX_ARG_SIZE 256
+//variables set per program requirements
 #define MAX_LINE 2048
 #define MAX_ARGS 512
 #define COMMENT "#"
 #define EXPAND "$$"
+//built rotating array for background job pid storage, max jobs were set to 100
+//also used constant for expansion of pid using $$
 #define JOB_ID_SIZE 100
 
 /* struct for command information */
 struct command
 {
     char *comm;
-    char *args[512];
+    char *args[MAX_ARGS];
     char *input;
     char *output;
     bool *background;
@@ -52,7 +55,7 @@ struct command *processArgs(struct command *currCommand)
   }
   // check if last value is &, and set background to true if so
   if(temp != NULL && (strncmp(temp, "&", strlen(temp)) == 0)){
-    currCommand->background = calloc(1, 10);
+    currCommand->background = calloc(1, sizeof(val));
     currCommand->background = val;
     //remove & from args array
     memset(currCommand->args + (i - 1), '\0', MAX_ARG_SIZE);
@@ -112,7 +115,7 @@ struct command *parseCommand(char *input)
       n++;
     }
 
-    // if at least one arg
+    // if at least one arg process &
     if(n > 0){
       processArgs(currCommand);
     }
@@ -122,9 +125,10 @@ struct command *parseCommand(char *input)
 
 void changeDirectory(struct command *currCommand)
 {
+  //use MAX_LINE in case path is close to max line requirement
   char *path;
-  char curr[1048];
-  char rootPath[1048] = "";
+  char curr[MAX_LINE];
+  char rootPath[MAX_LINE] = "";
 
   // check for arg sent to cd, if none go to env HOME
   if (currCommand->args[1] == NULL){
@@ -184,7 +188,7 @@ char* expand_input(char* input, char* expand, char* parentJobId) {
     //copies parentjobId starting at pointer where first instance of $$ starts
     memcpy(input_pointer, parentJobId, strlen(parentJobId));
 
-    // returns pointer to where parentjobID ends to run code on the rest of the string
+    // returns pointer to where parentjobID ends to run code on the rest of the string see line 269
     return input_pointer + strlen(parentJobId);
 }
 
@@ -201,16 +205,16 @@ int main(int argc)
     bool normalExit = true;
 
         // for saving postion of background job pid array
-    int  backgroundPids[100];
+    int  backgroundPids[JOB_ID_SIZE];
     memset(backgroundPids, 0, sizeof(backgroundPids));
     int  arrPosition = 0;
 
     // for toggling on and off foreground mode
     int onSwitch = 0;
 
+    // convert pid to string for expansion of $$ variable
     int pid = getpid();
     char parentJobId[JOB_ID_SIZE];
-    // convert pid to string for expansion
     snprintf(parentJobId, JOB_ID_SIZE, "%d", pid);
 
     // prompts for for user
@@ -218,7 +222,7 @@ int main(int argc)
 
         // check for completed background jobs, and clean up zombies, print job completion
         int j = 0;
-        for(j = 0; j < 100; j++){
+        for(j = 0; j < JOB_ID_SIZE; j++){
 
           if(backgroundPids[j] != 0){
             pid_t backChildPid = waitpid(backgroundPids[j], &childStatus, WNOHANG);
@@ -232,27 +236,28 @@ int main(int argc)
                 normalExit = false;
                 currChildStatus = WTERMSIG(childStatus);
               }
+              //print status
               backgroundStatus(currChildStatus, normalExit, backgroundPids[j]);
               // empty array at position to free up index
               memset(&backgroundPids[j], 0, sizeof(int));
+              //clear zombie
               waitpid(backgroundPids[j], &childStatus, WNOHANG);
             }
           }
         }
 
         //reset background job array position for new background jobs to be added if at end of array
-        // essentially a circular array
-        if(arrPosition == 99){
+        // essentially a circular array with max out of 100 background jobs
+        if(arrPosition == JOB_ID_SIZE - 1){
           arrPosition = 0;
         }
 
         printf(": ");
         fgets(input, MAX_LINE, stdin);
 
+        //if nothing entered by user
         strcpy(temp, input);
         char *token = strtok(temp, " \n");
-
-        //if nothing entered by user
         if(token == NULL){
           continue;
         }
@@ -270,7 +275,6 @@ int main(int argc)
 
         //usable input
         struct command *user_cmd = parseCommand(input);
-        // check_errors(user_cmd, pid);
 
         //cd
         if(strncmp(user_cmd->comm, "cd", strlen(user_cmd->comm)) == 0){
@@ -301,7 +305,7 @@ int main(int argc)
             while(user_cmd->args[i] != NULL && i < MAX_ARGS){
               i++;
             }
-            // make new array
+            // make new array adding one to accomodate NULL at end.
             int arrSize = i + 1;
             char *newArr[arrSize];
             i = 0;
@@ -321,6 +325,7 @@ int main(int argc)
             if(user_cmd->input != NULL){
               //open source file
               int sourceFD = open(user_cmd->input, O_RDONLY);
+
               if (sourceFD == -1) { 
                 perror("source open()");
                 fflush(stdout);
@@ -329,6 +334,7 @@ int main(int argc)
 
               // Redirect stdin to source file
               int result = dup2(sourceFD, 0);
+
               if (result == -1) { 
                 perror("source dup2()"); 
                 fflush(stdout);
@@ -339,6 +345,7 @@ int main(int argc)
             if(user_cmd->output != NULL){
               // Open target file
               int targetFD = open(user_cmd->output, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+
               if (targetFD == -1) { 
                 perror("target open()");
                 fflush(stdout);
@@ -347,6 +354,7 @@ int main(int argc)
               
               // Redirect stdout to target file
               int result = dup2(targetFD, 1);
+
               if (result == -1) { 
                 perror("target dup2()"); 
                 fflush(stdout);
@@ -358,7 +366,7 @@ int main(int argc)
             struct sigaction SIGINT_action = { 0 };
             struct sigaction ignore_action = { 0 };
 
-            // ignore SIGTSTP action if child 
+            // ignore SIGTSTP action if child, SIGTSTP will ignore other signals while going, use SA Restart to assist execvp functions
             ignore_action.sa_handler = SIG_IGN;
             sigfillset(&ignore_action.sa_mask);
             ignore_action.sa_flags = SA_RESTART;
@@ -394,7 +402,7 @@ int main(int argc)
             SIGINT_action.sa_flags = SA_RESTART;
             sigaction(SIGINT, &SIGINT_action, NULL);
 
-            // Handler for SIGUSR2, toggles on and off background argument
+            // Handler for SIGTSTP, toggles on and off background argument
             void handle_SIGTSTP(int signo){
               char* enter = "\nEntering foreground-only mode (& is now ignored)\n";
               char* exit = "\nExiting foreground-only mode\n";
@@ -415,16 +423,18 @@ int main(int argc)
             sigaction(SIGTSTP, &SIGTSTP_action, NULL);
 
             // save background job pid to array and print it's pid
-
+            // only if background is true and switch is on
             if(user_cmd->background && onSwitch == 0){
               backgroundPids[arrPosition] = childPid;
               arrPosition += 1;
               printf("background pid is %d\n", childPid);
               fflush(stdout);
+              // allow parent to not wait on background job
               childPid = waitpid(childPid, &childStatus, WNOHANG);
             }
             else{
               //if foreground job and killed by signal, print out signal
+              //parent will wait on this job
               childPid = waitpid(childPid, &childStatus, 0);
               if(WIFSIGNALED(childStatus)){
                 printf("\nterminated by signal %d\n", WTERMSIG(childStatus));
