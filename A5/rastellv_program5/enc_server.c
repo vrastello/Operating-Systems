@@ -7,6 +7,10 @@
 #include <netinet/in.h>
 #include <sys/wait.h>
 
+#define CLIENT_ID "enc_client"
+#define CONN_ERR "INVALID CONNECTION"
+#define CONN_SUCCESS "CLIENT ID CONFIRMED"
+
 // Error function used for reporting issues
 void error(const char *msg) {
   perror(msg);
@@ -84,15 +88,25 @@ int main(int argc, char *argv[]){
       close(listenSocket);
 
       char buffer[256];
+      char id[20];
+      memset(id, '\0', 20);
       int count = 0;
 
       while(count < 10){
           printf("SERVER: Connected to client running at host %d port %d\n", 
                                 ntohs(clientAddress.sin_addr.s_addr),
                                 ntohs(clientAddress.sin_port));
-
-
-
+          if(count == 0){
+            recv(connectionSocket, id, 19, 0);
+            printf("%s", id);
+            if(strncmp(id, CLIENT_ID, strlen(id)) != 0){
+              send(connectionSocket, CONN_ERR, strlen(CONN_ERR), 0); 
+              close(connectionSocket);
+            }
+            else{
+              send(connectionSocket, CONN_SUCCESS, strlen(CONN_SUCCESS), 0); 
+            }
+          }
           // Get the message from the client and display it
           memset(buffer, '\0', 256);
           // Read the client's message from the socket
@@ -101,7 +115,6 @@ int main(int argc, char *argv[]){
             error("ERROR reading from socket");
           }
           printf("SERVER: I received this from the client: \"%s\"\n", buffer);
-          sleep(5);
           // Send a Success message back to the client
           charsRead = send(connectionSocket, 
                           "tet", 4, 0); 
